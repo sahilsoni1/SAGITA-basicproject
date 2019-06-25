@@ -18,38 +18,37 @@ class eeprom
       Serial.println("stop");
     }
     friend void destructTest(eeprom* );
-    char* write_bytes(int position, char* Data, size_t len) {
-      if (position > 0 && len > 1 && len < ep_Buffer ) {
+    String write_bytes(int position, char* Data) {
+      int i = 0;
+      if (position > 0 && strlen(Data) > 1 && strlen(Data) < ep_Buffer ) {
         delayMicroseconds(1);
-        for (int i = 0; i < ep_Buffer; i++) {
-          if (i < len) {
+        for (i = 0; i < ep_Buffer; i++) {
+          if (i < strlen(Data)) {
             EEPROM.write((i + position), Data[i]);
           }
           else {
             EEPROM.write((i + position), 0);
-            if (i == (i + position - 1)) {
+            if (i == (ep_Buffer - 1)) {
               EEPROM.commit();
+              free(Data);
               return "done";
             }
           }
         }
       }
+      free(Data);
       return "ERROR_003";
     }
-     char* read_bytes(int position) {
-      static char readdata[ep_Buffer];
+    String read_bytes(int position) {
+      String readdata = "";
       for (int i = 0; i < ep_Buffer; i++) {
-        if ((EEPROM.read(i + position) != 0
-            ) && (EEPROM.read(i + position) != 255 )) {
-          readdata[i] = (char )EEPROM.read(i + position);
-          delayMicroseconds(1);
+        if ((EEPROM.read(i + position) != 0 ) && (EEPROM.read(i + position) != 255 )) {
+          readdata += (char )EEPROM.read(i + position);
         }
         else {
-          readdata[i] = NULL;
-          return (char *) readdata;
+          return readdata;
         }
       }
-      return "error";
     }
     void epromclear() {
       for (int i = 0; i < 512; i++) {
@@ -60,22 +59,18 @@ class eeprom
 };
 struct Emp
 {
-  char *ssid;
-  char *pwd;
+  size_t counter;
 };
 typedef struct Emp E1;
-
-
 void setup() {
   Serial.begin(9600);
   EEPROM.begin(512);
   WiFi.mode(WIFI_AP_STA);
   pinMode(0, INPUT_PULLUP);//flash
   WiFi.softAP(ssidforhotspot, passwordforhotspot);
-
   server.on("/", handleRoot);
   server.on("/write", handlewrite); //Associate the handler function to the path
-  //  server.on("/read", handleread); //Associate the handler function to the path
+  server.on("/read", handleread); //Associate the handler function to the path
   server.begin();
   IPAddress myIP = WiFi.softAPIP();
   Serial.print("AP IP address: ");
@@ -87,50 +82,50 @@ void setup() {
   }
   else {
     eeprom EP1;
-    int count = 0;
+    ptr->counter = 0;
     while (1) {
-      if (EP1.read_bytes(501) != "COMMON" && EP1.read_bytes(501) != "UNCOMMON") {
+      if (EP1.read_bytes(501) != "COMMON") {
         server.handleClient();
         if (millis() - lastConnectionTime > postingInterval) {
-          count++;
-          if (count == 5) {
-            Serial.println("ab");
-            ptr->ssid = EP1.read_bytes(1);
-            Serial.println(ptr->ssid);
-            Serial.println(strlen(ptr->ssid));
-            if (strcmp(ptr->ssid,"soni")==0) {
-              Serial.println("hello1");
-            }
-            for (int i = 0; i < 10; i++) {
-              Serial.print(i);
-              Serial.println(ptr->ssid[i]);
-            }
-            Serial.println((char*)EP1.read_bytes(501));
-            if (EP1.read_bytes(501) != "COMMON") {
-              Serial.println("hello");
-            }
-            count = 0;
+          ptr->counter++;
+          if (ptr->counter == 5) {
+            ptr->counter = 0;
           }
           lastConnectionTime = millis();
         }
       }
       else {
-        ESP.restart();
         break;
       }
     }
-    ptr->ssid = EP1.read_bytes(1);
-    Serial.println((char*)ptr->ssid);
-    //  E12->write_bytes(10, "sahil123", 6);
-    // ptr->pwd = E12->read_bytes(10);
-    // destructTest(E12);
-
+    String temp = EP1.read_bytes(1);
+    String temp1 = EP1.read_bytes(11);
+    const char *ssid = temp.c_str();
+    const char *pwd = temp1.c_str();
+    Serial.println(WiFi.begin(ssid, pwd));
+    while (WiFi.status() != WL_CONNECTED) {
+      server.handleClient();
+      if (millis() - lastConnectionTime > postingInterval) {
+        clear_reset();
+        server.handleClient();
+        Serial.println(".");
+        ptr->counter++;
+        if (ptr->counter == 10) {
+          ptr->counter = 0;
+          Serial.println("{4}/9-*jio_error+");
+        }
+        lastConnectionTime = millis();
+      }
+    }
+    EP1.~eeprom();
   }
 
 }
 void loop() {
   clear_reset();
 }
+
+
 void destructTest(eeprom* ep)
 {
   delete ep;
@@ -142,7 +137,7 @@ void handleRoot() {
 void handlewrite() {
   int epromaddress, Length;
   static char Data[ep_Buffer];
-  char* message;
+  String message;
   if (server.arg("address") == "" && server.arg("data") == "" ) {   //Parameter not found
     message = "ERROR_001";
   }
@@ -152,7 +147,25 @@ void handlewrite() {
     Length = server.arg("data").length();
     if (epromaddress % 10 == 1) {
       eeprom* a;
-      message = a->write_bytes(epromaddress, Data, Length);
+      message = a->write_bytes(epromaddress, Data);
+    }
+    else {
+      message = "ERROR_002";
+    }
+  }
+  server.send(200, "text / plain", message);        //Returns the HTTP response
+}
+void handleread() {
+  String message;
+  int epromaddress;
+  if (server.arg("address") == "") {   //Parameter not found
+    message = "ERROR_001";
+  }
+  else {    //Parameter found
+    epromaddress = server.arg("address").toInt();
+    if (epromaddress % 10 == 1) {
+      eeprom* a;
+      message = a->read_bytes(epromaddress);
     }
     else {
       message = "ERROR_002";
@@ -176,5 +189,4 @@ ineligible:
     }
     goto ineligible;
   }
-
 }
