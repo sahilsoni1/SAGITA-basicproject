@@ -9,13 +9,14 @@ void vout(int max, ...);
 void setup() {
   Serial.begin(9600);
   delay(1000);
-  payloadData p = sTime;
-  if (p == 101) {
-    Serial.println("yes yes yes!");
-  }
-  Serial.println("hello");
+  //payloadData p = sTime;
+  // if (p == 101) {
+  //  Serial.println("yes yes yes!");
+  // }
+  // Serial.println("hello");
   Serial.println( jsonGenerator(6, "tem", "30c", "hum", "200", "MOS", "300"));
   // vout(3, "Sat", sTime, "Sun", button1);
+  jsonExtrator(2, "{\"sensor\":\"gps\",\"time\":\"1351824120\"}", "sensor", sTime, "time", button1);
 }
 
 void loop() {
@@ -41,47 +42,44 @@ void loop() {
 String jsonGenerator(int max, ...) {
   va_list arg_ptr;
   int args = 0;
-  char *key[max / 2];
-  char *data[max / 2];
   DynamicJsonDocument doc(200);
   va_start(arg_ptr, max);
   while (args < max) {
-    //  key[args++] = va_arg(arg_ptr, char*);
-    args++;
-    //  data[args] = va_arg(arg_ptr, char*);
+    args = args + 2;
     doc[va_arg(arg_ptr, char*)] = va_arg(arg_ptr, char*);
-    args++;
   }
   String output;
   va_end(arg_ptr);
   serializeJson(doc, output);
   return output;
 }
-/*
-  void jsonExtrator(int max, char *data, ...) {
+
+void jsonExtrator(int max, char *data, ...) {
   va_list arg_ptr;
   int args = 0;
-  char key[max];
-  int position[max];
-  DynamicJsonDocument doc(200);
-  DeserializationError error = deserializeJson(doc, (byte*)json);
 
-  // Test if parsing succeeds.
+  DynamicJsonDocument doc(200);
+  DeserializationError error = deserializeJson(doc, (char*)data);
   if (error) {
     Serial.print(F("deserializeJson() failed: "));
     Serial.println(error.c_str());
     return;
   }
+  const char* keys[max];
+  int position[max];
+  //const char* sensor = doc["sensor"];
+ // long time = doc["time"];
   va_start(arg_ptr, max);
+ // Serial.println(sensor);
+//  Serial.println(time);  
   while (args < max)
   {
-    key[args] = va_arg(arg_ptr, char *);
-    data[args] = va_arg(arg_ptr, int);
-    String data1 = root[days[args]].as<String>();
-    write_bytes(position[args], data1);
-    Serial.println(position[args++]);
 
+  //  Serial.println(va_arg(arg_ptr, char *));
+    const char* abc=doc[va_arg(arg_ptr, char *)];
+    Serial.println(abc);
+    Serial.println(va_arg(arg_ptr, int));
+    args++;
   }
   va_end(arg_ptr);
-  }
-*/
+}
