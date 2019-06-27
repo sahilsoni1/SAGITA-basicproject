@@ -119,16 +119,12 @@ void setup() {
   Serial.begin(9600);
   EEPROM.begin(512);
   json js;
+  char 
   js.jsonExtrator(2, "{\"sensor\":\"gps\",\"time\":\"135182412\"}", "sensor", sTime, "time", button1);
   js.~eeprom();
   js.~json();
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-  //delay(10000);
-json js;
-  js.jsonExtrator(2, "{\"sensor\":\"gps\",\"time\":\"135182412\"}", "sensor", sTime, "time", button1);
-  js.~eeprom();
-  js.~json();
+
 }

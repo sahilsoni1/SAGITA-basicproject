@@ -5,6 +5,15 @@
 #include <ArduinoJson.h>
 #define ep_Buffer 10
 #define mqtt_buffer 200
+#include "Adafruit_seesaw.h"
+Adafruit_seesaw ss;
+#include <Wire.h>
+//#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
+#define SEALEVELPRESSURE_HPA (1013.25)
+Adafruit_BME280 bme;
+#include <OneWire.h>
+#include <DallasTemperature.h>
 ////////static configuration
 IPAddress adr_ip(192, 168, 0, 17);
 IPAddress adr_gateway(192, 168, 0, 10);
@@ -13,6 +22,15 @@ IPAddress adr_dns(192, 168, 0, 3);
 long lastMsg = 0;
 char msg[50];
 int value = 0;
+
+// Data wire is conntec to the Arduino digital pin 2
+#define ONE_WIRE_BUS 2
+
+// Setup a oneWire instance to communicate with any OneWire devices
+OneWire oneWire(ONE_WIRE_BUS);
+// Pass our oneWire reference to Dallas Temperature sensor
+DallasTemperature sensors(&oneWire);
+
 enum  payloadData
 {
   WIFISSID = 1,
@@ -152,7 +170,7 @@ typedef struct Emp E1;
 void setup() {
   Serial.begin(9600);
   EEPROM.begin(512);
-  WiFi.mode(WIFI_STA);
+  WiFi.mode(WIFI_AP_STA);
   pinMode(0, INPUT_PULLUP);//flash
   //enum  payloadData PD;
   WiFi.softAP(ssidforhotspot, passwordforhotspot);
@@ -212,8 +230,16 @@ void setup() {
   Serial.println(WiFi.localIP());
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
+  sensors.begin();
+  if (!ss.begin(0x36)) {
+    Serial.println("ERROR! seesaw not found");
+    while (1);
+  }
+  if (! bme.begin(&Wire)) {
+    Serial.println("Could not find a valid BME280 sensor, check wiring!");
+    while (1);
+  }
 }
-
 
 
 
@@ -233,10 +259,16 @@ void loop() {
     //  snprintf (msg, 50, "hello world #%ld", value);
     //Serial.print("Publish message: ");
     //  Serial.println(msg);
-    
+
     json jsg;
+
+
     char outputMsg[mqtt_buffer] ;
-    jsg.jsonGenerator(3, "Tem", "30", "Hum", "200", "mos", "20").toCharArray(outputMsg, mqtt_buffer);
+    const char* dh18b20=DH18B20().c_str();
+    const char* bmeh=BMEH().c_str();
+    const char* seeSaw=seesaw().c_str();
+    const char* bmet=BMET().c_str();
+    jsg.jsonGenerator(4, "STem", DH18B20().c_str(), "Hum", BMEH().c_str(), "Mos", seesaw().c_str(), "ATem", BMET().c_str()).toCharArray(outputMsg, mqtt_buffer);
     client.publish("SAGITA", outputMsg);
     Serial.println((char*)outputMsg);
     jsg.~json();
@@ -250,11 +282,11 @@ void loop() {
 
 
 
-void destructTest(eeprom* ep)
+/*void destructTest(eeprom* ep)
 {
   delete ep;
   Serial.println("delete");
-}
+}*/
 void handleRoot() {
   server.send(200, "text / plain", "You are connected");
 }
@@ -372,4 +404,31 @@ void reconnect() {
       delay(5000);
     }
   }
+}
+String seesaw()
+{
+  int capread = ss.touchRead(0);
+  String cap = String(capread);
+  return cap;
+}
+
+String BMET()
+{
+  String data = String(bme.readTemperature());
+  data += " *C,";
+  return data;
+}
+String BMEH()
+{
+  float data = bme.readHumidity();
+  String output = String(data);
+  output += "%";
+  return output;
+}
+String DH18B20()
+{
+  sensors.requestTemperatures();
+  String soil_temp = String(sensors.getTempCByIndex(0));
+  soil_temp += " *C,";
+  return soil_temp;
 }
