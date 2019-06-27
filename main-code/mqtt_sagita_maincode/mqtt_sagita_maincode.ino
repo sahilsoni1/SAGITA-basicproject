@@ -1,27 +1,44 @@
 #include <ESP8266WiFi.h>
 #include <EEPROM.h>
 #include <ESP8266WebServer.h>
+#include <PubSubClient.h>
 #include <ArduinoJson.h>
 #define ep_Buffer 10
+#define mqtt_buffer 200
+////////static configuration
+IPAddress adr_ip(192, 168, 0, 17);
+IPAddress adr_gateway(192, 168, 0, 10);
+IPAddress adr_dns(192, 168, 0, 3);
+////temp variable
+long lastMsg = 0;
+char msg[50];
+int value = 0;
 enum  payloadData
 {
+  WIFISSID = 1,
+  WIFIPWD = 11,
+  CLIENTID = 21,
   sTime = 101,
-  button1 = 111
+  button1 = 111,
+  VERFICATION = 501
 };
 const char *ssidforhotspot = "SAGITA";
 const char *passwordforhotspot = "thereisnospoon";
+const char* mqtt_server = "broker.mqtt-dashboard.com";
 IPAddress ip(192, 168, 0, 177);
 unsigned long lastConnectionTime = 0;             // last time you connected to the server, in milliseconds
 const unsigned long postingInterval = 1L * 1000L; // delay between updates, in milliseconds
 ESP8266WebServer server(80);
+WiFiClient espClient;
+PubSubClient client(espClient);
 class eeprom
 {
   public:
     eeprom() {
-      Serial.println("eeprom_start");
+      //  Serial.println("eeprom_start");
     }
     ~eeprom() {
-      Serial.println("stop");
+      //  Serial.println("stop");
     }
     friend void destructTest(eeprom* );
     String write_bytes(int position, const char* Data) {
@@ -68,18 +85,18 @@ class json: public eeprom
 {
   public:
     json() {
-      Serial.println("eeprom_start");
+      //    Serial.println("eeprom_start");
     }
     ~json() {
-      Serial.println("stop");
+      //   Serial.println("stop");
     }
     String jsonGenerator(int max, ...) {
       va_list arg_ptr;
       int args = 0;
-      DynamicJsonDocument doc(200);
+      DynamicJsonDocument doc(mqtt_buffer);
       va_start(arg_ptr, max);
       while (args < max) {
-        args = args + 2;
+        args++;
         doc[va_arg(arg_ptr, char*)] = va_arg(arg_ptr, char*);
       }
       String output;
@@ -91,7 +108,7 @@ class json: public eeprom
       va_list arg_ptr;
       int args = 0;
 
-      DynamicJsonDocument doc(200);
+      DynamicJsonDocument doc(mqtt_buffer);
       DeserializationError error = deserializeJson(doc, (const char*)data);
       if (error) {
         Serial.print(F("deserializeJson() failed: "));
@@ -135,8 +152,9 @@ typedef struct Emp E1;
 void setup() {
   Serial.begin(9600);
   EEPROM.begin(512);
-  WiFi.mode(WIFI_AP_STA);
+  WiFi.mode(WIFI_STA);
   pinMode(0, INPUT_PULLUP);//flash
+  //enum  payloadData PD;
   WiFi.softAP(ssidforhotspot, passwordforhotspot);
   server.on("/", handleRoot);
   server.on("/write", handlewrite); //Associate the handler function to the path
@@ -154,7 +172,7 @@ void setup() {
     eeprom EP1;
     ptr->counter = 0;
     while (1) {
-      if (EP1.read_bytes(501) != "COMMON") {
+      if (EP1.read_bytes(VERFICATION) != "COMMON") {
         server.handleClient();
         if (millis() - lastConnectionTime > postingInterval) {
           ptr->counter++;
@@ -168,8 +186,8 @@ void setup() {
         break;
       }
     }
-    String temp = EP1.read_bytes(1);
-    String temp1 = EP1.read_bytes(11);
+    String temp = EP1.read_bytes(WIFISSID);
+    String temp1 = EP1.read_bytes(WIFIPWD);
     const char *ssid = temp.c_str();
     const char *pwd = temp1.c_str();
     Serial.println(WiFi.begin(ssid, pwd));
@@ -189,8 +207,11 @@ void setup() {
     }
     EP1.~eeprom();
   }
-
-
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
 }
 
 
@@ -199,11 +220,27 @@ void setup() {
 
 void loop() {
 
-  json js;
-  js.jsonExtrator(2, "{\"sensor\":\"gps\",\"time\":\"135182412\"}", "sensor", sTime, "time", button1);
-  js.jsonExtrator(2, "{\"sensor\":\"gps\",\"time\":\"1351824121\"}", "sensor", sTime, "time", button1);
-  js.~eeprom();
-  js.~json();
+  if (!client.connected()) {
+    reconnect();
+
+  }
+  client.loop();
+
+  long now = millis();
+  if (now - lastMsg > 2000) {
+    lastMsg = now;
+    ++value;
+    //  snprintf (msg, 50, "hello world #%ld", value);
+    //Serial.print("Publish message: ");
+    //  Serial.println(msg);
+    
+    json jsg;
+    char outputMsg[mqtt_buffer] ;
+    jsg.jsonGenerator(3, "Tem", "30", "Hum", "200", "mos", "20").toCharArray(outputMsg, mqtt_buffer);
+    client.publish("SAGITA", outputMsg);
+    Serial.println((char*)outputMsg);
+    jsg.~json();
+  }
   delay(1000);
   clear_reset();
 }
@@ -275,5 +312,64 @@ ineligible:
       ESP.restart();
     }
     goto ineligible;
+  }
+}
+void callback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  int count = 0;
+  int stop_serial = 0;
+  static char a[100];
+  for (int i = 0; i < length; i++) {
+    a[i] = (char)payload[i];
+    if (a[i] == '{') {
+      count++;
+      stop_serial = 1;
+    }
+    else if (a[i] == '}') {
+      count--;
+    }
+    if (stop_serial == 1) {
+      Serial.print(a[i]);
+      if (count == 0 ) {
+        a[i + 1] = '\0';
+        Serial.println(a[i + 1]);
+        break;
+      }
+    }
+  }
+  const char* ab = a;
+  Serial.print((char*)ab);
+  // json js;
+  //   js.jsonExtrator(2, ab, "sensor", sTime, "time", button1);
+  if (strcmp(topic, "SAGITA_I") == 0) {
+    json js;
+    js.jsonExtrator(2, ab, "sensor", sTime, "time", button1);
+    //js.~json();
+  }
+  Serial.println();
+}
+
+void reconnect() {
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // Create a random client ID
+    String clientId = "ESP8266Client-";
+    clientId += String(random(0xffff), HEX);
+    // Attempt to connect
+    if (client.connect(clientId.c_str())) {
+      Serial.println("connected");
+      // Once connected, publish an announcement...
+      client.publish("SAGITA", "hello world");
+      // ... and resubscribe
+      client.subscribe("SAGITA_I");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(5000);
+    }
   }
 }
