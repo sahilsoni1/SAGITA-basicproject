@@ -58,7 +58,7 @@ String BMEH()
   Serial.println("data");
   Serial.println(data);
   String output = String(data);
-  output = "%";
+  output += "%";
   return output;
 }
 String DH18B20()

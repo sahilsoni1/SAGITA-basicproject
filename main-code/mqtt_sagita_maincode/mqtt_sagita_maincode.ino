@@ -168,8 +168,15 @@ typedef struct Emp E1;
 
 
 void setup() {
+
   Serial.begin(9600);
   EEPROM.begin(512);
+  delay(1000);
+  //  WiFi.forceSleepWake();  // Réveil le WiFi
+  //  delay(10);
+  //  Serial.println("Connexion WiFi");
+
+  //  WiFi.persistent( false );
   WiFi.mode(WIFI_AP_STA);
   pinMode(0, INPUT_PULLUP);//flash
   //enum  payloadData PD;
@@ -245,7 +252,7 @@ void setup() {
 
 
 void loop() {
-
+  clear_reset();
   if (!client.connected()) {
     reconnect();
 
@@ -264,14 +271,15 @@ void loop() {
 
 
     char outputMsg[mqtt_buffer] ;
-    const char* dh18b20=DH18B20().c_str();
-    const char* bmeh=BMEH().c_str();
-    const char* seeSaw=seesaw().c_str();
-    const char* bmet=BMET().c_str();
+    const char* dh18b20 = DH18B20().c_str();
+    const char* bmeh = BMEH().c_str();
+    const char* seeSaw = seesaw().c_str();
+    const char* bmet = BMET().c_str();
     jsg.jsonGenerator(4, "STem", DH18B20().c_str(), "Hum", BMEH().c_str(), "Mos", seesaw().c_str(), "ATem", BMET().c_str()).toCharArray(outputMsg, mqtt_buffer);
     client.publish("SAGITA", outputMsg);
     Serial.println((char*)outputMsg);
     jsg.~json();
+    ESP.deepSleep(30e6, WAKE_RF_DEFAULT);
   }
   delay(1000);
   clear_reset();
@@ -283,10 +291,10 @@ void loop() {
 
 
 /*void destructTest(eeprom* ep)
-{
+  {
   delete ep;
   Serial.println("delete");
-}*/
+  }*/
 void handleRoot() {
   server.send(200, "text / plain", "You are connected");
 }
@@ -387,13 +395,20 @@ void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
     // Create a random client ID
-    String clientId = "ESP8266Client-";
-    clientId += String(random(0xffff), HEX);
-    // Attempt to connect
+    String clientId = "sahilsoni19970";
+    /// Attempt to connect
     if (client.connect(clientId.c_str())) {
       Serial.println("connected");
       // Once connected, publish an announcement...
-      client.publish("SAGITA", "hello world");
+      // client.publish("SAGITA", "hello world");
+      json jsg;
+      char outputMsg[mqtt_buffer] ;
+      jsg.jsonGenerator(4, "STem", DH18B20().c_str(), "Hum", BMEH().c_str(), "Mos", seesaw().c_str(), "ATem", BMET().c_str()).toCharArray(outputMsg, mqtt_buffer);
+      client.publish("SAGITA", outputMsg);
+      Serial.println((char*)outputMsg);
+      jsg.~json();
+      delay(1000);
+      ESP.deepSleep(30e6, WAKE_RF_DEFAULT);
       // ... and resubscribe
       client.subscribe("SAGITA_I");
     } else {
@@ -415,7 +430,7 @@ String seesaw()
 String BMET()
 {
   String data = String(bme.readTemperature());
-  data += " *C,";
+  data += " *c";
   return data;
 }
 String BMEH()
@@ -429,6 +444,6 @@ String DH18B20()
 {
   sensors.requestTemperatures();
   String soil_temp = String(sensors.getTempCByIndex(0));
-  soil_temp += " *C,";
+  soil_temp += " *C";
   return soil_temp;
 }
